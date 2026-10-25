@@ -9,7 +9,7 @@ app = FastAPI()
 
 @app.get("/")
 def health_check():
-    return {"status": "5m Free Pure Python Bot is running!"}
+    return {"status": "100% Seed Full-Margin Bot is running!"}
 
 def run_trading_bot():
     BITGET_API_KEY = os.getenv("BITGET_API_KEY")
@@ -25,10 +25,10 @@ def run_trading_bot():
     })
 
     symbol = 'ETH/USDT:USDT'
-    timeframe = '5m'  # 👈 1분봉에서 5분봉으로 변경
-    amount = 0.01  # 테스트용 주문 수량
+    timeframe = '5m'
+    leverage = 20
 
-    print("🤖 5분봉 기준 100% 무료 자율 매매 봇이 가동을 시작한다...")
+    print("🤖 지갑 시드 100% 풀매매 봇이 가동을 시작한다...")
 
     last_checked_timestamp = 0
 
@@ -38,10 +38,9 @@ def run_trading_bot():
             ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=200)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
-            # 새로운 5분봉 마감 확인
             latest_timestamp = df['timestamp'].iloc[-1]
             if latest_timestamp == last_checked_timestamp:
-                time.sleep(30)  # 5분봉이므로 체크 주기를 30초로 여유 있게 조절
+                time.sleep(30)
                 continue
             last_checked_timestamp = latest_timestamp
 
@@ -85,26 +84,43 @@ def run_trading_bot():
             long_cond = (curr_close > curr_ema100) and (curr_close > curr_vwap) and (prev_macd <= prev_signal) and (curr_macd > curr_signal)
             short_cond = (curr_close < curr_ema100) and (curr_close < curr_vwap) and (prev_macd >= prev_signal) and (curr_macd < curr_signal)
 
-            # 5. 주문 집행 (20배 레버리지 + TP + SL)
-            exchange.set_leverage(20, symbol)
-
-            if long_cond:
-                print(f"[{pd.Timestamp.now()}] 🚀 5분봉 롱(Long) 진입 조건 충족!")
-                exchange.create_market_buy_order(symbol, amount)
+            if long_cond or short_cond:
+                # 5. 레버리지 설정 및 계정 잔고 조회 (100% 시드 계산)
+                exchange.set_leverage(leverage, symbol)
+                balance = exchange.fetch_balance()
                 
-                tp_price = curr_close * (1 + 0.0035)
-                sl_price = curr_close * (1 - 0.0020)
-                exchange.create_order(symbol, 'limit', 'sell', amount, tp_price, {'reduceOnly': True})
-                exchange.create_order(symbol, 'stop_market', 'sell', amount, params={'triggerPrice': sl_price, 'reduceOnly': True})
+                # 선물 계정의 사용 가능한 USDT 잔고 확인
+                usdt_free = balance['USDT']['free']
+                if usdt_free <= 0:
+                    print("⚠️ 사용 가능한 USDT 잔고가 없다!")
+                    time.sleep(30)
+                    continue
 
-            elif short_cond:
-                print(f"[{pd.Timestamp.now()}] 📉 5분봉 숏(Short) 진입 조건 충족!")
-                exchange.create_market_sell_order(symbol, amount)
+                # 총 주문 가능 금액 = 잔고 x 레버리지(20배)
+                total_notional = usdt_free * leverage
+                # 매수 가능한 이더리움 수량 계산 (현재가 기준)
+                amount = total_notional / curr_close
                 
-                tp_price = curr_close * (1 - 0.0035)
-                sl_price = curr_close * (1 + 0.0020)
-                exchange.create_order(symbol, 'limit', 'buy', amount, tp_price, {'reduceOnly': True})
-                exchange.create_order(symbol, 'stop_market', 'buy', amount, params={'triggerPrice': sl_price, 'reduceOnly': True})
+                # 비트겟 최소 주문 단위 맞춤 소수점 처리 (보통 4자리)
+                amount = round(amount, 4)
+
+                if long_cond:
+                    print(f"[{pd.Timestamp.now()}] 🚀 5분봉 롱(Long) 풀시드 진입! 수량: {amount} ETH")
+                    exchange.create_market_buy_order(symbol, amount)
+                    
+                    tp_price = curr_close * (1 + 0.0035)
+                    sl_price = curr_close * (1 - 0.0020)
+                    exchange.create_order(symbol, 'limit', 'sell', amount, tp_price, {'reduceOnly': True})
+                    exchange.create_order(symbol, 'stop_market', 'sell', amount, params={'triggerPrice': sl_price, 'reduceOnly': True})
+
+                elif short_cond:
+                    print(f"[{pd.Timestamp.now()}] 📉 5분봉 숏(Short) 풀시드 진입! 수량: {amount} ETH")
+                    exchange.create_market_sell_order(symbol, amount)
+                    
+                    tp_price = curr_close * (1 - 0.0035)
+                    sl_price = curr_close * (1 + 0.0020)
+                    exchange.create_order(symbol, 'limit', 'buy', amount, tp_price, {'reduceOnly': True})
+                    exchange.create_order(symbol, 'stop_market', 'buy', amount, params={'triggerPrice': sl_price, 'reduceOnly': True})
 
         except Exception as e:
             print(f"에러 발생: {e}")
