@@ -9,9 +9,17 @@ app = FastAPI()
 
 @app.get("/")
 def health_check():
-    return {"status": "100% Seed Full-Margin Bot is running!"}
+    return {"status": "100% Free Pure Python Bot is alive and running!"}
+
+# 봇 실행 상태를 관리하는 플래그
+bot_running = False
 
 def run_trading_bot():
+    global bot_running
+    if bot_running:
+        return
+    bot_running = True
+
     BITGET_API_KEY = os.getenv("BITGET_API_KEY")
     BITGET_SECRET = os.getenv("BITGET_SECRET")
     BITGET_PASSPHRASE = os.getenv("BITGET_PASSPHRASE")
@@ -28,7 +36,7 @@ def run_trading_bot():
     timeframe = '5m'
     leverage = 20
 
-    print("🤖 지갑 시드 100% 풀매매 봇이 가동을 시작한다...")
+    print("🤖 지갑 시드 100% 풀매매 봇이 안정 모드로 가동을 시작한다...")
 
     last_checked_timestamp = 0
 
@@ -89,19 +97,14 @@ def run_trading_bot():
                 exchange.set_leverage(leverage, symbol)
                 balance = exchange.fetch_balance()
                 
-                # 선물 계정의 사용 가능한 USDT 잔고 확인
                 usdt_free = balance['USDT']['free']
                 if usdt_free <= 0:
                     print("⚠️ 사용 가능한 USDT 잔고가 없다!")
                     time.sleep(30)
                     continue
 
-                # 총 주문 가능 금액 = 잔고 x 레버리지(20배)
                 total_notional = usdt_free * leverage
-                # 매수 가능한 이더리움 수량 계산 (현재가 기준)
                 amount = total_notional / curr_close
-                
-                # 비트겟 최소 주문 단위 맞춤 소수점 처리 (보통 4자리)
                 amount = round(amount, 4)
 
                 if long_cond:
